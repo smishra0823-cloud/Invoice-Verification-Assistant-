@@ -65,6 +65,14 @@ checker computes its own total from the line items.
   four-column tables: `Description | Qty | Unit Price | Amount` or equivalent
   whitespace-separated rows. It handles CGST/SGST totals and Indian number
   grouping. Arbitrary layouts may require manual correction or AI vision.
+- Net/VAT/gross tables are also supported: comma decimals and spaced thousands
+  are normalized, the seller is separated from the client, wrapped descriptions
+  stay with their item, and summary rows are excluded from the item list.
+  Tax IDs are never interpreted as tax amounts. Ambiguous dates and dollar
+  currency codes remain unconfirmed rather than guessed.
+- macOS OCR retains more scan resolution and uses overlapping strip passes to
+  fill text regions missed by the initial page pass, without replacing numbers
+  to make the arithmetic balance.
 - **Paste invoice text** and **Manual entry** remain available if OCR cannot run.
 
 ### Optional multimodal AI extraction
@@ -115,6 +123,16 @@ dates, invalid dates, missing charges and empty line amounts are surfaced. Missi
 optional charges are explicitly flagged as assumed zero rather than silently
 accepted. Invalid, negative, non-finite and oversized numeric inputs are rejected.
 
+For rows with an explicit VAT rate and gross amount, the checker also compares
+net × (1 + VAT rate) with the printed gross and sums the printed gross amounts.
+Differences of one minor currency unit per affected line are **review warnings**,
+not silently accepted tolerances: the supplier's tax-rounding policy is unknown.
+Larger differences remain errors. Original printed values are retained.
+
+Unreadable/missing amounts produce **Reading incomplete**, not a claim that the
+invoice is incorrect. The UI distinguishes extraction problems, confirmed
+arithmetic mismatches, and matching totals with details left to confirm.
+
 Arithmetic passing does **not** establish that the goods, vendor, tax treatment
 or invoice are genuine. Extraction can be wrong even when JSON is well formed.
 
@@ -161,6 +179,7 @@ invoice_assistant/
   parser.py                 Local text extraction baseline
   ai.py                     Optional vision-model integration
   validation.py             Independent Decimal checks
+  presentation.py           Plain-language reading/mismatch/review states
   exports.py                CSV/JSON review records
 scripts/
   ocr_macos.swift           Native Apple Vision OCR
@@ -174,14 +193,19 @@ docs/                       Demo and implementation notes
 ## Current scope and limitations
 
 - One invoice per upload, at most five pages, 10 MB and 25 megapixels per image.
-- Ordinary invoices with exclusive document-level tax, shipping and discount.
-- Credit notes, tax-inclusive pricing, per-line taxes/discounts, currency conversion,
+- Ordinary invoices with exclusive document-level tax, shipping and discount,
+  plus explicit net/VAT/gross item tables with a printed tax summary.
+- Credit notes, tax-inclusive unit pricing, per-line discounts, currency conversion,
   duplicate invoices and bank/vendor verification are outside the implemented rules.
 - The local baseline targets English labels and simple tables; it is not a
   general document-understanding model.
 - No measured real-world accuracy, production certification or employer deployment
   is claimed. Add a labeled, permission-cleared real-world test set before making
   stronger extraction claims.
+
+See [Validation notes](docs/VALIDATION.md) for the supplied batch regression and
+its limits. No supplied invoice images, OCR caches, tax IDs or bank details are
+included in the repository.
 - API keys and invoice content must not be placed in GitHub. The default app binds
   only to localhost. Deploying publicly needs authentication, rate limits,
   retention controls and a separate security review.

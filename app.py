@@ -14,9 +14,11 @@ from invoice_assistant.documents import DocumentError, local_text, read_document
 from invoice_assistant.exports import csv_bytes, export_record, json_bytes
 from invoice_assistant.models import Invoice, LineItem
 from invoice_assistant.parser import parse_invoice_text
+from invoice_assistant.presentation import MISMATCH_CODES, field_label, result_summary
 from invoice_assistant.validation import validate_invoice
 
 ROOT = Path(__file__).resolve().parent
+READER_VERSION = "net-vat-gross-v2"
 load_dotenv(ROOT / ".env")
 st.set_page_config(page_title="InvoiceLens · Clear invoice checks", page_icon="📄", layout="wide")
 st.markdown(f"<style>{(ROOT / 'assets/style.css').read_text()}</style>", unsafe_allow_html=True)
@@ -59,7 +61,7 @@ def scan_invoice(name, data=None, text="", manual=False, cloud=False, api_key=""
                     invoice = parse_invoice_text(text)
                     meta["method"] = mode + " / rules"
             clear_result()
-            st.session_state.update(invoice=invoice.model_dump(), source=meta, source_images=images, raw_text=text, approved=False)
+            st.session_state.update(invoice=invoice.model_dump(), source=meta, source_images=images, raw_text=text, approved=False, reader_version=READER_VERSION)
         st.rerun()
     except (DocumentError, AIExtractionError, ValueError) as error:
         st.error(str(error))
@@ -83,6 +85,9 @@ def footer():
     st.markdown('<div class="footer"><span>InvoiceLens</span><span>A little clarity for every invoice.</span></div>', unsafe_allow_html=True)
 
 
+if "invoice" in st.session_state and st.session_state.get("reader_version") != READER_VERSION:
+    clear_result()
+    st.info("The invoice reader has been updated. Upload your invoice again to use the improved checks.")
 has_invoice = "invoice" in st.session_state
 st.markdown('<div class="masthead"><div class="brand"><span class="brand-icon">i<span>✓</span></span>InvoiceLens<span class="brand-dot">.</span></div><span class="nav-label">INVOICE VERIFICATION</span></div>', unsafe_allow_html=True)
 if not has_invoice:
@@ -125,11 +130,15 @@ if not has_invoice:
             sample_invoice("scanned_invoice.png")
         st.caption("Fictional examples. No real customer information.")
     with st.expander("Have invoice text instead? Or enter details yourself"):
-        text = st.text_area("Paste invoice text", height=140, placeholder="Vendor: ABC Supplies\nInvoice No: INV-001\n...")
-        extra = st.columns(2)
-        if extra[0].button("Check pasted text", disabled=not text.strip(), width="stretch"):
-            scan_invoice("Pasted invoice text", text=text)
-        if extra[1].button("Enter details manually", width="stretch"):
+        with st.form("pasted_invoice"):
+            text = st.text_area("Paste invoice text", height=140, placeholder="Vendor: ABC Supplies\nInvoice No: INV-001\n...")
+            check_text = st.form_submit_button("Check pasted text", width="stretch")
+        if check_text:
+            if text.strip():
+                scan_invoice("Pasted invoice text", text=text)
+            else:
+                st.warning("Paste the invoice text first, then click Check pasted text.")
+        if st.button("Enter details manually", width="stretch"):
             scan_invoice("Manual entry", manual=True)
     st.markdown('<div class="benefits"><div><span>01 / READ</span><h3>The details, in one place.</h3><p>Supplier, dates and line items organised into a readable summary.</p></div><div><span>02 / CHECK</span><h3>Small errors, spotted.</h3><p>Item amounts and totals recalculated, with differences clearly flagged.</p></div><div><span>03 / KEEP</span><h3>Ready for your next step.</h3><p>Review the details and download a spreadsheet or detailed report.</p></div></div>', unsafe_allow_html=True)
     with st.expander("What can this tool check?"):
@@ -146,31 +155,31 @@ top[0].caption(f"CURRENT DOCUMENT  /  {source['filename']}")
 if top[1].button("Check another invoice", width="stretch"):
     start_over()
     st.rerun()
-if report.error_count:
-    tone, title = "correction", "Some amounts need a second look"
-    subtitle = f"We found {report.error_count} issue{'s' if report.error_count != 1 else ''} to correct. Compare the details below with your invoice."
-elif report.warning_count:
-    tone, title = "attention", "A few details need your review"
-    subtitle = "Some fields are missing or need confirmation. Check the notes below before marking this reviewed."
-else:
-    tone, title = "matched", "The amounts add up"
-    subtitle = "The arithmetic checks passed. Please confirm that the extracted details match your original."
+tone, title, subtitle = result_summary(report)
 st.markdown(f'<div class="result-banner {tone}"><div class="result-symbol">{"!" if report.issues else "✓"}</div><div><strong>{title}</strong><p>{subtitle}</p></div></div>', unsafe_allow_html=True)
 metrics = st.columns(3)
-metrics[0].metric("Total on invoice", report.stated_total or "Not found")
-metrics[1].metric("Recalculated total", report.calculated_total or "Needs details")
-metrics[2].metric("Difference", report.difference or "Not available")
+metrics[0].metric("Total on invoice", report.stated_total or "Not read")
+metrics[1].metric("Recalculated total", report.calculated_total or "Not checked yet")
+metrics[2].metric("Difference", report.difference or "Not checked yet")
 st.caption(f"Amounts in {invoice.currency or 'the invoice currency'}. Difference = invoice total − recalculated total.")
 if report.issues:
-    with st.expander(f"What needs attention ({len(report.issues)})", expanded=True):
-        for issue in report.issues:
-            field = issue.field.replace("_", " ")
-            message = f"**{field.title()}** — {issue.message}"
+    main_issues = [issue for issue in report.issues if issue.code != "ASSUMED_ZERO"]
+    assumptions = [issue for issue in report.issues if issue.code == "ASSUMED_ZERO"]
+    with st.expander("Checks and details to confirm", expanded=True):
+        if report.difference == "0.00":
+            st.success("Net item amounts + printed tax + shipping − discount match the invoice total.")
+        for issue in main_issues:
+            message = f"**{field_label(issue.field)}** — {issue.message}"
+            if issue.code == "MISSING_FIELD" and issue.field == "currency":
+                message = "**Currency** — A currency code was not printed or could not be read. The $ symbol alone does not identify USD, CAD or AUD. You can still check the numbers; enter the code if known."
             if issue.expected:
                 message += f" Expected: **{issue.expected}**."
             if issue.actual:
                 message += f" Read: **{issue.actual}**."
-            (st.error if issue.severity == "ERROR" else st.warning)(message)
+            (st.error if issue.code in MISMATCH_CODES else st.warning)(message)
+        if assumptions:
+            fields = ", ".join(field_label(issue.field).lower() for issue in assumptions)
+            st.caption(f"Calculation assumption: {fields} not shown; treated as zero. Confirm against the original.")
 
 left, right = st.columns([1, 1.25], gap="large")
 with left, st.container(border=True, key="original_card"):
@@ -203,8 +212,15 @@ with right, st.container(border=True, key="details_card"):
         detail("Invoice number", invoice.invoice_number)
         detail("Due date", invoice.due_date or "Not stated")
     st.markdown("#### Items")
-    frame = pd.DataFrame([item.model_dump() for item in invoice.line_items], columns=["description", "quantity", "unit_price", "line_total"]).fillna("")
-    st.dataframe(frame.rename(columns={"description": "Description", "quantity": "Qty", "unit_price": "Unit price", "line_total": "Amount"}), hide_index=True, width="stretch")
+    item_fields = ["description", "quantity", "unit_price", "line_total", "tax_rate", "gross_total"]
+    frame = pd.DataFrame([item.model_dump() for item in invoice.line_items], columns=item_fields, dtype=object).fillna("")
+    vat_present = any(item.tax_rate is not None or item.gross_total is not None for item in invoice.line_items)
+    shown_fields = item_fields[:4]
+    st.dataframe(frame[shown_fields].rename(columns={"description": "Description", "quantity": "Qty", "unit_price": "Net price" if vat_present else "Unit price", "line_total": "Net amount" if vat_present else "Amount"}), hide_index=True, width="stretch")
+    if vat_present:
+        with st.expander("VAT and gross amounts"):
+            st.caption("Net amounts exclude tax. Gross amounts include the printed item VAT.")
+            st.dataframe(frame[["description", "tax_rate", "gross_total"]].rename(columns={"description": "Description", "tax_rate": "VAT %", "gross_total": "Printed gross"}), hide_index=True, width="stretch")
     summary = ""
     for label, value in (("Subtotal", invoice.subtotal), ("Tax", invoice.tax_total), ("Shipping", invoice.shipping), ("Discount", invoice.discount)):
         summary += f'<div class="total-row"><span>{label}</span><span>{html.escape(value or "Not stated")}</span></div>'
@@ -220,7 +236,7 @@ with right, st.container(border=True, key="details_card"):
             invoice_date = row2[0].text_input("Invoice date", value=invoice.invoice_date or "")
             due_date = row2[1].text_input("Due date", value=invoice.due_date or "")
             currency = row2[2].text_input("Currency", value=invoice.currency or "", placeholder="INR")
-            edited = st.data_editor(frame, num_rows="dynamic", hide_index=True, width="stretch", column_config={"description": st.column_config.TextColumn("Description", width="large"), "quantity": "Qty", "unit_price": "Unit price", "line_total": "Amount"}, key=f"line_editor_{revision}")
+            edited = st.data_editor(frame, num_rows="dynamic", hide_index=True, width="stretch", column_config={"description": st.column_config.TextColumn("Description", width="large"), "quantity": "Qty", "unit_price": "Net / unit price", "line_total": "Net amount", "tax_rate": "VAT % (optional)", "gross_total": "Gross (optional)"}, key=f"line_editor_{revision}")
             totals = {}
             for cols, names in ((st.columns(3), ("subtotal", "tax_total", "shipping")), (st.columns(2), ("discount", "total"))):
                 for col, name in zip(cols, names):
@@ -257,7 +273,7 @@ with st.container(border=True, key="download_card"):
     downloads[0].download_button("Download spreadsheet (CSV)", data=csv_bytes(record), file_name=f"invoice_{label}.csv", mime="text/csv", type="primary", width="stretch")
     downloads[1].download_button("Download detailed report (JSON)", data=json_bytes(record), file_name=f"invoice_{label}.json", mime="application/json", width="stretch")
 with st.expander("About these checks"):
-    st.write("Quantities × prices are recalculated independently, then tax and shipping are added and discount subtracted. Matching amounts confirm the arithmetic; they do not confirm the supplier or whether an invoice is genuine.")
+    st.write("Quantities × net prices are recalculated independently, then printed tax and shipping are added and discount subtracted. When VAT rates and gross amounts are read, they are cross-checked separately. Small tax-rounding differences are flagged for review. Matching amounts do not confirm whether an invoice is genuine.")
     st.dataframe(pd.DataFrame(report.line_calculations), hide_index=True, width="stretch")
-    st.caption("Portfolio prototype for ordinary invoices with separately stated document-level tax. Credit notes, inclusive/per-item tax and per-item discounts need additional validation. Always compare with the original.")
+    st.caption("Supports simple invoices and net/VAT/gross tables with a printed tax summary. Credit notes, tax-inclusive unit prices and per-item discounts need additional validation. OCR can still miss text. Always compare with the original.")
 footer()

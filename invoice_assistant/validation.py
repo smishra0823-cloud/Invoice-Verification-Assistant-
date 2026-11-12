@@ -66,6 +66,8 @@ class ValidationReport:
 
     @property
     def status(self):
+        if self.calculated_total is None or self.stated_total is None:
+            return "Reading incomplete"
         return "Needs correction" if self.error_count else "Review required" if self.warning_count else "Checks passed"
 
     def to_dict(self):
@@ -112,11 +114,15 @@ def validate_invoice(invoice: Invoice) -> ValidationReport:
             try:
                 parsed_dates[name] = date.fromisoformat(value)
             except ValueError:
-                issue("WARNING", "INVALID_DATE", name, "Date should use YYYY-MM-DD; confirm it against the document.", actual=value)
+                if re.fullmatch(r"\d{1,2}[/.-]\d{1,2}[/.-]\d{4}", value):
+                    issue("WARNING", "AMBIGUOUS_DATE", name, "The printed date may use month/day or day/month. Confirm the order and enter it as YYYY-MM-DD.", actual=value)
+                else:
+                    issue("WARNING", "INVALID_DATE", name, "This date could not be read as a valid date. Confirm it against the document.", actual=value)
     if len(parsed_dates) == 2 and parsed_dates["due_date"] < parsed_dates["invoice_date"]:
         issue("WARNING", "DATE_ORDER", "due_date", "Due date precedes invoice date.")
 
     computed = Decimal(0)
+    printed_gross, rounding_notes = [], []
     all_lines_valid = bool(invoice.line_items)
     if not invoice.line_items:
         issue("ERROR", "NO_LINE_ITEMS", "line_items", "Add at least one line item before verifying the invoice.")
@@ -135,6 +141,22 @@ def validate_invoice(invoice: Invoice) -> ValidationReport:
         expected = rounded(quantity * price)
         computed += expected
         report.line_calculations.append({"line": index, "description": item.description, "calculated_amount": money(expected)})
+        if item.tax_rate is not None or item.gross_total is not None:
+            rate = number(item.tax_rate, f"{prefix}.tax_rate")
+            gross = number(item.gross_total, f"{prefix}.gross_total")
+            if rate is not None and rate > 100:
+                issue("ERROR", "INVALID_NUMBER", f"{prefix}.tax_rate", "Tax percentage must be between 0 and 100.")
+                rate = None
+            if rate is not None and gross is not None:
+                calculated_gross = rounded(expected * (1 + rate / 100))
+                printed_gross.append(gross)
+                difference = rounded(gross - calculated_gross)
+                report.line_calculations[-1].update(tax_rate=str(rate), calculated_gross=money(calculated_gross), printed_gross=money(gross))
+                if difference:
+                    if abs(difference) <= quantum:
+                        rounding_notes.append(f"Item {index}: printed gross {money(gross)}, recalculated {money(calculated_gross)}")
+                    else:
+                        issue("ERROR", "GROSS_MISMATCH", f"{prefix}.gross_total", f"Item {index}: net amount plus VAT does not match the printed gross amount.", money(calculated_gross), money(gross))
         if item.line_total is None or not item.line_total.strip():
             issue("WARNING", "MISSING_LINE_TOTAL", f"{prefix}.line_total", "Line amount is missing; quantity × unit price was used.", expected=money(expected))
         else:
@@ -168,4 +190,14 @@ def validate_invoice(invoice: Invoice) -> ValidationReport:
                 if difference:
                     direction = "high" if difference > 0 else "low"
                     issue("ERROR", "TOTAL_MISMATCH", "total", f"Invoice total is too {direction} by {money(abs(difference))} {currency}.".strip(), money(expected_total), money(total))
+            if total is not None and len(printed_gross) == len(invoice.line_items):
+                sum_gross = rounded(sum(printed_gross) + shipping - discount)
+                difference = rounded(total - sum_gross)
+                if difference:
+                    if abs(difference) <= quantum * len(printed_gross):
+                        rounding_notes.append(f"Printed gross item amounts total {money(sum_gross)}, invoice total {money(total)}")
+                    else:
+                        issue("ERROR", "GROSS_SUM_MISMATCH", "total", "Printed gross item amounts do not add up to the invoice total after shipping and discount.", money(sum_gross), money(total))
+    if rounding_notes:
+        issue("WARNING", "ROUNDING_REVIEW", "tax_total", "Possible tax-rounding difference. Confirm the supplier's rounding method: " + "; ".join(rounding_notes) + ". The difference has not been silently accepted.")
     return report

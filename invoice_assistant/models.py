@@ -10,6 +10,8 @@ class LineItem(BaseModel):
     quantity: str | None = None
     unit_price: str | None = None
     line_total: str | None = None
+    tax_rate: str | None = None
+    gross_total: str | None = None
 
 
 class Invoice(BaseModel):

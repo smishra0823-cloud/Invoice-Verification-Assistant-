@@ -37,7 +37,9 @@ class InvoiceDocument:
 
 def png_bytes(image: Image.Image) -> bytes:
     image = ImageOps.exif_transpose(image).convert("RGB")
-    image.thumbnail((2200, 2200))
+    # Keep normal page scans at their original resolution. Downsampling a
+    # 2339px page to 2200px dropped small descriptions in dense tables.
+    image.thumbnail((3200, 3200))
     output = io.BytesIO()
     image.save(output, format="PNG")
     return output.getvalue()
@@ -117,7 +119,9 @@ def _mac_ocr(path: Path) -> str:
     # Group words/columns at similar vertical positions before reading left to right.
     rows = []
     for item in sorted(observations, key=lambda item: -item["y"]):
-        row = next((row for row in rows if abs(row[0]["y"] - item["y"]) < 0.012), None)
+        # Scale tolerance to text height: a fixed threshold merged adjacent
+        # description lines and sometimes put them in the wrong reading order.
+        row = next((row for row in rows if abs(row[0]["y"] - item["y"]) < min(0.008, 0.55 * min(row[0].get("height", 0.012), item.get("height", 0.012)))), None)
         if row is None:
             rows.append([item])
         else:

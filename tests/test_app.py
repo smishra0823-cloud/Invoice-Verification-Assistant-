@@ -75,7 +75,7 @@ def test_manual_entry_and_pasted_text_remain_available():
     assert not app.exception
     assert app.session_state["source"]["method"] == "manual"
     next(b for b in app.button if b.label == "Check another invoice").click().run()
-    app.text_area[0].set_value((ROOT / "samples/matching_invoice.txt").read_text()).run()
+    app.text_area[0].set_value((ROOT / "samples/matching_invoice.txt").read_text())
     next(b for b in app.button if b.label == "Check pasted text").click().run()
     assert not app.exception
     assert any(m.value == "253.98" for m in app.metric)
