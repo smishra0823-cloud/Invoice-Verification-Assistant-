@@ -1,0 +1,15 @@
+{
+  "matching_invoice.pdf": {
+    "vendor_name": "Sample Stationery Shop",
+    "invoice_number": "DEMO-001",
+    "line_items": 2,
+    "calculated_total": "253.98",
+    "difference": "0.00",
+    "errors": 0
+  },
+  "mismatch_invoice.pdf": {
+    "calculated_total": "253.98",
+    "difference": "7.00",
+    "error_code": "TOTAL_MISMATCH"
+  }
+}

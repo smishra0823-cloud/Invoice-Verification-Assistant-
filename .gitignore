@@ -1,0 +1,16 @@
+.venv/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.cache/
+.DS_Store
+.streamlit/secrets.toml
+uploads/
+exports/
+*.log
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json

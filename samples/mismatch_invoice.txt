@@ -1,0 +1,15 @@
+Vendor: Sample Stationery Shop
+Invoice No: DEMO-001
+Invoice Date: 2026-11-12
+Due Date: 2026-11-26
+Currency: INR
+
+Description | Qty | Unit Price | Amount
+Notebook | 2 | 75.50 | 151.00
+Pen set | 3 | 20.00 | 60.00
+
+Subtotal: 211.00
+Tax total: 37.98
+Shipping: 10.00
+Discount: 5.00
+Grand Total: 260.98
