@@ -3,14 +3,14 @@
 1. Run `python -m streamlit run app.py` in the activated `.venv`.
 2. Explain the separation: extraction reads the document; Python independently
    checks arithmetic; a person reviews before export.
-3. Extract the matching demo. Show its two line items, tax, shipping, discount
+3. Click **Try a matching invoice**. Show its two line items, tax, shipping, discount
    and expected total **253.98 INR**.
-4. Extract the mismatch demo. Show the **7.00 INR** discrepancy.
-5. Correct the printed total in the form and click **Save edits and verify**.
-6. Mark reviewed with a demo reviewer name and download CSV and JSON.
-7. Extract the scanned demo to show image OCR. Open the extracted-text panel.
+4. Click **Check another invoice**, then **Find a mismatch**. Show the **7.00 INR** discrepancy.
+5. Open **Something looks wrong? Edit the details**, correct the total and click **Save changes and recheck**.
+6. Open **Mark as reviewed (optional)**, complete the review and download CSV and JSON.
+7. Return home and click **Try a scan**. Open **How this was read** to show the OCR text.
 8. If an API key is configured and you choose to pay for a request, demonstrate
-   optional AI vision and its explicit upload consent.
+   cloud AI inside **Optional settings** and its explicit upload consent.
 
 ## Questions to be ready to answer
 

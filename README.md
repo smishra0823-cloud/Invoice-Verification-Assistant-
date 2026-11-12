@@ -35,15 +35,17 @@ another shortcut. Keep `.venv`, `.env` and actual invoices out of Git.
 
 ## Try the demonstration
 
-1. Select **Demo: matching invoice**, keep **Local / no API key**, and click
-   **Extract invoice**. The expected total is **253.98 INR**.
-2. Compare the page with the editable vendor, dates, line items and totals.
-3. Select **Demo: total mismatch** and extract again. The printed total is
+1. Click **Try a matching invoice**. No setup or API key is needed.
+   The expected total is **253.98 INR**.
+2. Compare the original with the readable supplier, dates, line items and totals.
+3. Click **Check another invoice**, then **Find a mismatch**. The printed total is
    **260.98 INR**, so the checker flags a **7.00 INR** overcharge.
-4. Change the total in the form to `253.98` and click **Save edits and verify**.
-5. Enter a reviewer name, acknowledge the source review, and click **Mark
-   reviewed**. Download CSV or the JSON audit report.
-6. Try **Demo: scanned invoice** to exercise image OCR. The first macOS OCR run
+4. Open **Something looks wrong? Edit the details**, change the total to
+   `253.98` and click **Save changes and recheck**.
+5. Download the spreadsheet (CSV) or detailed report (JSON). To label the export
+   reviewed, open **Mark as reviewed (optional)**, enter a name, acknowledge
+   the source review and click **Mark reviewed**.
+6. Click **Check another invoice**, then **Try a scan** to exercise image OCR. The first macOS OCR run
    compiles a small Swift helper and may take longer.
 
 All sample documents are synthetic. They are not real purchases or customer
@@ -74,9 +76,13 @@ correct them. Independent Python rules do the actual financial checks.
 
 1. Copy `.env.example` to `.env` locally and set your own API key, or enter a key
    in the app's password field. Do not commit it or paste it into a public issue.
-2. Choose **AI vision / OpenAI**. The configurable default is `gpt-4.1-mini`;
+2. On the upload screen, open **Optional settings** and enable **Use cloud AI
+   for complex layouts**. The configurable default is `gpt-4.1-mini`;
    choose a compatible vision model your API account can access.
-3. Explicitly allow that invoice to be sent to OpenAI, then click **Extract**.
+3. Explicitly allow that invoice to be sent to OpenAI, then click **Check my invoice**.
+
+Cloud AI is off by default and hidden inside optional settings. Sample buttons
+always use the local reader, even when cloud AI is selected for uploads.
 
 The application does not make a paid request automatically, retries are disabled,
 and requests use `store=False`. Image transmission still leaves the computer;
@@ -147,6 +153,7 @@ OCR is tested separately on a Mac; it is not a Linux CI capability.
 
 ```text
 app.py                      Streamlit application
+assets/style.css            Responsive upload and results interface
 main.py                     Original terminal learning exercise (preserved)
 invoice_assistant/
   models.py                 Invoice and line-item schema
