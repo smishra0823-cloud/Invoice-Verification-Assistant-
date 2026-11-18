@@ -11,7 +11,7 @@ def test_demo_review_and_approval():
     extract = next(button for button in app.button if button.label == "Try a matching invoice")
     extract.click().run()
     assert not app.exception
-    assert any(metric.value == "253.98" for metric in app.metric)
+    assert any(metric.value == "₹ 253.98" for metric in app.metric)
     assert any("The amounts add up" in item.value for item in app.markdown)
     reviewer = next(widget for widget in app.text_input if widget.label == "Reviewer name")
     reviewer.set_value("Demo Reviewer").run()
@@ -24,7 +24,7 @@ def test_mismatch_blocks_approval():
     app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=30).run()
     next(button for button in app.button if button.label == "Find a mismatch").click().run()
     assert not app.exception
-    assert any(metric.value == "7.00" for metric in app.metric)
+    assert any(metric.value == "₹ 7.00" for metric in app.metric)
     assert next(button for button in app.button if button.label == "Mark reviewed").disabled
 
 
@@ -57,7 +57,7 @@ def test_edit_clears_approval_and_rechecks_visible_totals():
     assert not app.exception
     assert app.session_state["approved"] is False
     assert app.session_state["review_ack"] is False
-    assert any(m.value == "7.00" for m in app.metric)
+    assert any(m.value == "₹ 7.00" for m in app.metric)
     assert next(b for b in app.button if b.label == "Mark reviewed").disabled
 
 
@@ -78,4 +78,4 @@ def test_manual_entry_and_pasted_text_remain_available():
     app.text_area[0].set_value((ROOT / "samples/matching_invoice.txt").read_text())
     next(b for b in app.button if b.label == "Check pasted text").click().run()
     assert not app.exception
-    assert any(m.value == "253.98" for m in app.metric)
+    assert any(m.value == "₹ 253.98" for m in app.metric)

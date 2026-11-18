@@ -5,6 +5,8 @@ MISMATCH_CODES = {"LINE_MISMATCH", "SUBTOTAL_MISMATCH", "TOTAL_MISMATCH", "GROSS
 
 
 def result_summary(report):
+    if any(issue.code == "MIXED_CURRENCIES" for issue in report.issues):
+        return "attention", "Please confirm the currency first", "Different currencies were detected. Amounts have not been added or compared across currencies. Review the currency evidence below."
     if report.calculated_total is None or report.stated_total is None:
         return "attention", "We couldn’t read enough to check this invoice", "This is a reading problem, not a confirmed invoice error. Compare the extracted details with the original and fill in the missing amounts below."
     if any(issue.code in MISMATCH_CODES for issue in report.issues):

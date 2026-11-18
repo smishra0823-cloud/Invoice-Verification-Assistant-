@@ -107,6 +107,23 @@ Official references:
 
 ## Verification rules
 
+### Currency identification and display
+
+The reader detects supported printed ISO codes, currency names and symbols.
+Examples: `₹` / `INR` / “Indian rupees”, `€` / `EUR` / “euros”, and `US$` / `USD`
+/ “US dollars”. Amounts, items and totals show the detected symbol and the
+currency name/code. CSV and JSON retain both code and symbol as separate fields.
+
+A bare `$` is displayed as dollars, without guessing USD versus CAD/AUD/etc.
+Likewise, bare `Rs` and `¥` need a specific code. A small optional currency picker
+lets the reviewer confirm the code. Conflicting currency evidence blocks amount
+comparison until resolved; the application does not convert between currencies.
+Codes, names and symbols are supported for the currencies listed in
+`invoice_assistant/currency.py`; this is not an all-currency/all-language guarantee.
+
+See [Résumé feature audit](docs/RESUME_AUDIT.md) for the implementation status of
+the project bullets and the distinction between local OCR and optional vision AI.
+
 The checker uses `Decimal`, with `ROUND_HALF_UP`, and rounds each line before
 summing. Most currencies use two decimal places; JPY uses zero and KWD/BHD three.
 
@@ -180,6 +197,7 @@ invoice_assistant/
   ai.py                     Optional vision-model integration
   validation.py             Independent Decimal checks
   presentation.py           Plain-language reading/mismatch/review states
+  currency.py               Currency evidence, ambiguity and amount display
   exports.py                CSV/JSON review records
 scripts/
   ocr_macos.swift           Native Apple Vision OCR

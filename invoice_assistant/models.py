@@ -22,6 +22,10 @@ class Invoice(BaseModel):
     invoice_date: str | None = None
     due_date: str | None = None
     currency: str | None = None
+    currency_symbol: str | None = None
+    currency_status: str = "unknown"
+    currency_candidates: list[str] = Field(default_factory=list)
+    currency_evidence: list[str] = Field(default_factory=list)
     line_items: list[LineItem] = Field(default_factory=list)
     subtotal: str | None = None
     tax_total: str | None = None

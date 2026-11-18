@@ -18,7 +18,7 @@ def spreadsheet_safe(value):
 
 def export_record(invoice: Invoice, report: ValidationReport, source: dict, reviewer: str = "", approved=False):
     return {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "source": source,
         "invoice": invoice.model_dump(),
@@ -37,13 +37,13 @@ def json_bytes(record):
 
 def csv_bytes(record):
     stream = io.StringIO(newline="")
-    fields = ["vendor_name", "invoice_number", "invoice_date", "currency", "description", "quantity", "unit_price", "line_total", "tax_rate", "gross_total", "invoice_total", "calculated_total", "difference", "validation_status", "review_status", "reviewer"]
+    fields = ["vendor_name", "invoice_number", "invoice_date", "currency", "currency_symbol", "currency_status", "description", "quantity", "unit_price", "line_total", "tax_rate", "gross_total", "invoice_total", "calculated_total", "difference", "validation_status", "review_status", "reviewer"]
     writer = csv.DictWriter(stream, fieldnames=fields)
     writer.writeheader()
     invoice = record["invoice"]
     for item in invoice["line_items"] or [{}]:
         row = {
-            **{name: invoice.get(name) for name in fields[:4]},
+            **{name: invoice.get(name) for name in fields[:6]},
             **{name: item.get(name) for name in ("description", "quantity", "unit_price", "line_total", "tax_rate", "gross_total")},
             "invoice_total": invoice["total"],
             "calculated_total": record["validation"]["calculated_total"],

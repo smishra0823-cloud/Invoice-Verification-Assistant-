@@ -31,3 +31,13 @@ at item or document level; the app flags them for review and retains the evidenc
 
 The supplied documents and full OCR output were kept locally and excluded from
 GitHub. Public tests use synthetic content with fictional identifiers.
+
+## Currency update — 18 November 2026
+
+110 automated tests pass, including codes, names, symbols, ambiguous dollar/rupee/
+yen symbols, conflicting currencies, identifier false positives, export metadata
+and manual correction. Browser checks confirmed rupee and euro display, dollar
+family display and explicit USD confirmation. Re-parsing the retained local OCR
+for the previous 15 images preserved every main total comparison and identified
+the printed dollar symbol. Currency display does not establish general OCR
+accuracy, and no live vision-model call was made as part of this update.

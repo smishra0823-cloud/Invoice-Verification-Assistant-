@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from .models import Invoice
+from .currency import CURRENCIES, currency_precision, strip_currency
 
 
 def decimal_value(value: object) -> Decimal:
@@ -18,8 +19,7 @@ def decimal_value(value: object) -> Decimal:
     negative = text.startswith("(") and text.endswith(")")
     if negative:
         text = text[1:-1].strip()
-    text = re.sub(r"^(?:INR|USD|EUR|GBP|CAD|AUD|JPY|KWD)\s*", "", text, flags=re.I)
-    text = text.lstrip("₹$€£").strip()
+    text = strip_currency(text)
     # Accept standard and Indian grouping, but never silently remove arbitrary commas.
     number = r"(?:\d+|\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3})(?:\.\d+)?"
     if not re.fullmatch(r"[+-]?" + number, text):
@@ -66,6 +66,8 @@ class ValidationReport:
 
     @property
     def status(self):
+        if any(issue.code == "MIXED_CURRENCIES" for issue in self.issues):
+            return "Currency review required"
         if self.calculated_total is None or self.stated_total is None:
             return "Reading incomplete"
         return "Needs correction" if self.error_count else "Review required" if self.warning_count else "Checks passed"
@@ -77,7 +79,7 @@ class ValidationReport:
 def validate_invoice(invoice: Invoice) -> ValidationReport:
     report = ValidationReport()
     currency = (invoice.currency or "").strip().upper()
-    precision = {"JPY": 0, "KWD": 3, "BHD": 3}.get(currency, 2)
+    precision = currency_precision(currency)
     quantum = Decimal(1).scaleb(-precision)
 
     def rounded(amount):
@@ -102,10 +104,19 @@ def validate_invoice(invoice: Invoice) -> ValidationReport:
             issue("ERROR", "INVALID_NUMBER", name, str(error), actual=str(value or ""))
             return None
 
-    for name in ("vendor_name", "invoice_number", "invoice_date", "currency"):
+    if invoice.currency_status == "mixed":
+        issue("ERROR", "MIXED_CURRENCIES", "currency", "Conflicting currency evidence was read. Confirm one currency or separate the invoices before comparing amounts. No currency conversion has been performed.")
+        return report
+    for name in ("vendor_name", "invoice_number", "invoice_date"):
         if not str(getattr(invoice, name) or "").strip():
             issue("WARNING", "MISSING_FIELD", name, f"{name.replace('_', ' ').title()} is missing.")
-    if currency and not re.fullmatch(r"[A-Z]{3}", currency):
+    if not currency:
+        if invoice.currency_symbol:
+            note = " Two decimal places are used provisionally; select JPY or CNY to confirm the required precision." if invoice.currency_symbol == "¥" else " The numeric checks below use the same printed units."
+            issue("WARNING", "AMBIGUOUS_CURRENCY", "currency", f"The {invoice.currency_symbol} symbol was identified. Its country-specific currency code is not specified." + note)
+        else:
+            issue("WARNING", "MISSING_FIELD", "currency", "No currency code, name or symbol could be read. Enter it if known.")
+    if currency and currency not in CURRENCIES:
         issue("WARNING", "CURRENCY_FORMAT", "currency", "Use a three-letter currency code such as INR.")
     parsed_dates = {}
     for name in ("invoice_date", "due_date"):

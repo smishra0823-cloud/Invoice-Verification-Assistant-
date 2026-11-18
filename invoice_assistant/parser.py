@@ -8,6 +8,7 @@ import re
 from datetime import date
 
 from .models import Invoice, LineItem
+from .currency import set_currency, strip_currency
 from .validation import decimal_value
 
 AMOUNT = r"[+-]?(?:\d{1,3}(?:[ \u00a0]\d{3})+(?:[.,]\d+)?|\d[\d.,]*)"
@@ -20,8 +21,7 @@ VAT_ROW = re.compile(
 
 def normalized_number(value: str, comma_decimal=False) -> str:
     value = value.strip().replace("\u00a0", " ")
-    value = re.sub(r"^(?:INR|USD|EUR|GBP|CAD|AUD|JPY|KWD|BHD)\s*", "", value, flags=re.I)
-    value = value.lstrip("₹$€£").strip()
+    value = strip_currency(value)
     if " " in value:
         if not re.fullmatch(r"[+-]?\d{1,3}(?: \d{3})+(?:[.,]\d+)?", value):
             raise ValueError("Unclear number grouping")
@@ -82,10 +82,7 @@ def parse_invoice_text(text: str) -> Invoice:
     invoice.invoice_number = labeled(r"invoice\s*(?:number\b|no\.?\b|#)")
     invoice.invoice_date = normalized_date(labeled(r"(?:date of issue|invoice date|issue date|date)\b"))
     invoice.due_date = normalized_date(labeled(r"due date\b"))
-    currency = re.search(r"\b(INR|USD|EUR|GBP|CAD|AUD|JPY|KWD|BHD)\b", text, re.I)
-    invoice.currency = currency[1].upper() if currency else next((code for symbol, code in [("₹", "INR"), ("€", "EUR"), ("£", "GBP")] if symbol in text), None)
-    if not invoice.currency and "$" in text:
-        invoice.notes.append("The document shows $, which does not identify USD, CAD or AUD by itself. Confirm the currency code if needed.")
+    set_currency(invoice, text)
 
     vat_layout = bool(re.search(r"net\s+price", text, re.I) and re.search(r"net\s+worth", text, re.I) and re.search(r"\bVAT\b", text, re.I) and re.search(r"\bgross\b", text, re.I))
     summary_at = next((i for i, line in enumerate(lines) if re.fullmatch(r"summary", line, re.I)), len(lines))

@@ -15,10 +15,11 @@ from invoice_assistant.exports import csv_bytes, export_record, json_bytes
 from invoice_assistant.models import Invoice, LineItem
 from invoice_assistant.parser import parse_invoice_text
 from invoice_assistant.presentation import MISMATCH_CODES, field_label, result_summary
+from invoice_assistant.currency import CURRENCIES, currency_label, format_money, set_currency
 from invoice_assistant.validation import validate_invoice
 
 ROOT = Path(__file__).resolve().parent
-READER_VERSION = "net-vat-gross-v2"
+READER_VERSION = "currency-evidence-v3"
 load_dotenv(ROOT / ".env")
 st.set_page_config(page_title="InvoiceLens · Clear invoice checks", page_icon="📄", layout="wide")
 st.markdown(f"<style>{(ROOT / 'assets/style.css').read_text()}</style>", unsafe_allow_html=True)
@@ -158,10 +159,22 @@ if top[1].button("Check another invoice", width="stretch"):
 tone, title, subtitle = result_summary(report)
 st.markdown(f'<div class="result-banner {tone}"><div class="result-symbol">{"!" if report.issues else "✓"}</div><div><strong>{title}</strong><p>{subtitle}</p></div></div>', unsafe_allow_html=True)
 metrics = st.columns(3)
-metrics[0].metric("Total on invoice", report.stated_total or "Not read")
-metrics[1].metric("Recalculated total", report.calculated_total or "Not checked yet")
-metrics[2].metric("Difference", report.difference or "Not checked yet")
-st.caption(f"Amounts in {invoice.currency or 'the invoice currency'}. Difference = invoice total − recalculated total.")
+metrics[0].metric("Total on invoice", format_money(report.stated_total, invoice) or "Not read")
+metrics[1].metric("Recalculated total", format_money(report.calculated_total, invoice) or "Not checked yet")
+metrics[2].metric("Difference", format_money(report.difference, invoice) or "Not checked yet")
+st.markdown(f"**Currency: {html.escape(currency_label(invoice))}**")
+if invoice.currency_evidence:
+    prefix = "Confirmed by reviewer: " if invoice.currency_status == "confirmed" else "Read from the invoice: "
+    st.caption(prefix + ", ".join(invoice.currency_evidence))
+st.caption("Difference = invoice total − recalculated total. No currency conversion is performed.")
+if not invoice.currency:
+    with st.expander("Know the exact currency? Select it here"):
+        choices = [""] + sorted(CURRENCIES)
+        choice = st.selectbox("Confirm currency", choices, format_func=lambda code: f"{CURRENCIES[code][0]} ({code})" if code else "Choose a currency…", key=f"currency_choice_{st.session_state.get('revision', 0)}")
+        if st.button("Apply currency", disabled=not choice):
+            set_currency(invoice, choice, manual=True)
+            st.session_state.update(invoice=invoice.model_dump(), approved=False, review_ack=False, revision=st.session_state.get("revision", 0) + 1)
+            st.rerun()
 if report.issues:
     main_issues = [issue for issue in report.issues if issue.code != "ASSUMED_ZERO"]
     assumptions = [issue for issue in report.issues if issue.code == "ASSUMED_ZERO"]
@@ -171,7 +184,7 @@ if report.issues:
         for issue in main_issues:
             message = f"**{field_label(issue.field)}** — {issue.message}"
             if issue.code == "MISSING_FIELD" and issue.field == "currency":
-                message = "**Currency** — A currency code was not printed or could not be read. The $ symbol alone does not identify USD, CAD or AUD. You can still check the numbers; enter the code if known."
+                message = "**Currency** — No supported currency code, name or symbol could be read. Enter it in Edit the details if known."
             if issue.expected:
                 message += f" Expected: **{issue.expected}**."
             if issue.actual:
@@ -211,20 +224,26 @@ with right, st.container(border=True, key="details_card"):
     with info[1]:
         detail("Invoice number", invoice.invoice_number)
         detail("Due date", invoice.due_date or "Not stated")
+    detail("Currency", currency_label(invoice))
     st.markdown("#### Items")
     item_fields = ["description", "quantity", "unit_price", "line_total", "tax_rate", "gross_total"]
     frame = pd.DataFrame([item.model_dump() for item in invoice.line_items], columns=item_fields, dtype=object).fillna("")
     vat_present = any(item.tax_rate is not None or item.gross_total is not None for item in invoice.line_items)
     shown_fields = item_fields[:4]
-    st.dataframe(frame[shown_fields].rename(columns={"description": "Description", "quantity": "Qty", "unit_price": "Net price" if vat_present else "Unit price", "line_total": "Net amount" if vat_present else "Amount"}), hide_index=True, width="stretch")
+    displayed = frame[shown_fields].copy()
+    for column in ("unit_price", "line_total"):
+        displayed[column] = displayed[column].map(lambda value: format_money(value, invoice) if value else "Not read")
+    st.dataframe(displayed.rename(columns={"description": "Description", "quantity": "Qty", "unit_price": "Net price" if vat_present else "Unit price", "line_total": "Net amount" if vat_present else "Amount"}), hide_index=True, width="stretch")
     if vat_present:
         with st.expander("VAT and gross amounts"):
             st.caption("Net amounts exclude tax. Gross amounts include the printed item VAT.")
-            st.dataframe(frame[["description", "tax_rate", "gross_total"]].rename(columns={"description": "Description", "tax_rate": "VAT %", "gross_total": "Printed gross"}), hide_index=True, width="stretch")
+            gross_display = frame[["description", "tax_rate", "gross_total"]].copy()
+            gross_display["gross_total"] = gross_display["gross_total"].map(lambda value: format_money(value, invoice) if value else "Not read")
+            st.dataframe(gross_display.rename(columns={"description": "Description", "tax_rate": "VAT %", "gross_total": "Printed gross"}), hide_index=True, width="stretch")
     summary = ""
     for label, value in (("Subtotal", invoice.subtotal), ("Tax", invoice.tax_total), ("Shipping", invoice.shipping), ("Discount", invoice.discount)):
-        summary += f'<div class="total-row"><span>{label}</span><span>{html.escape(value or "Not stated")}</span></div>'
-    st.markdown(f'<div class="totals">{summary}<div class="total-row final-total"><strong>Invoice total <small>{html.escape(invoice.currency or "")}</small></strong><strong>{html.escape(invoice.total or "Not found")}</strong></div></div>', unsafe_allow_html=True)
+        summary += f'<div class="total-row"><span>{label}</span><span>{html.escape(format_money(value, invoice) if value else "Not stated")}</span></div>'
+    st.markdown(f'<div class="totals">{summary}<div class="total-row final-total"><strong>Invoice total <small>{html.escape(invoice.currency or "")}</small></strong><strong>{html.escape(format_money(invoice.total, invoice) or "Not found")}</strong></div></div>', unsafe_allow_html=True)
     with st.expander("Something looks wrong? Edit the details", expanded=source["method"] == "manual"):
         st.caption("Edit and save to recheck. Dates: YYYY-MM-DD. Amounts: 150.00.")
         revision = st.session_state.get("revision", 0)
@@ -235,7 +254,7 @@ with right, st.container(border=True, key="details_card"):
             row2 = st.columns(3)
             invoice_date = row2[0].text_input("Invoice date", value=invoice.invoice_date or "")
             due_date = row2[1].text_input("Due date", value=invoice.due_date or "")
-            currency = row2[2].text_input("Currency", value=invoice.currency or "", placeholder="INR")
+            currency = row2[2].text_input("Currency", value=invoice.currency or invoice.currency_symbol or "", placeholder="INR, ₹, EUR or $", help="Enter a printed code, symbol or name. A country-specific code resolves ambiguous symbols.")
             edited = st.data_editor(frame, num_rows="dynamic", hide_index=True, width="stretch", column_config={"description": st.column_config.TextColumn("Description", width="large"), "quantity": "Qty", "unit_price": "Net / unit price", "line_total": "Net amount", "tax_rate": "VAT % (optional)", "gross_total": "Gross (optional)"}, key=f"line_editor_{revision}")
             totals = {}
             for cols, names in ((st.columns(3), ("subtotal", "tax_total", "shipping")), (st.columns(2), ("discount", "total"))):
@@ -246,6 +265,7 @@ with right, st.container(border=True, key="details_card"):
             records = edited.fillna("").astype(str).to_dict("records")
             records = [row for row in records if any(value.strip() for value in row.values())]
             updated = Invoice(vendor_name=vendor.strip() or None, invoice_number=invoice_number.strip() or None, invoice_date=invoice_date.strip() or None, due_date=due_date.strip() or None, currency=currency.strip().upper() or None, line_items=[LineItem(**{k: (v.strip() or None) if k != "description" else v.strip() for k, v in row.items()}) for row in records], notes=invoice.notes, **{name: value.strip() or None for name, value in totals.items()})
+            set_currency(updated, currency.strip(), manual=True)
             st.session_state.update(invoice=updated.model_dump(), approved=False, review_ack=False)
             st.rerun()
 
