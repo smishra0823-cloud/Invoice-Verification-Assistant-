@@ -41,3 +41,17 @@ family display and explicit USD confirmation. Re-parsing the retained local OCR
 for the previous 15 images preserved every main total comparison and identified
 the printed dollar symbol. Currency display does not establish general OCR
 accuracy, and no live vision-model call was made as part of this update.
+
+## Offline interview-demo hardening — 18 November 2026
+
+118 tests pass. Added explicit reordered table-column support, month-name dates,
+unreadable-row warnings, preserved-source recovery when OCR is unavailable, and
+separate arithmetic/review status in exports. Long item descriptions now wrap so
+they do not hide the numeric columns. Non-critical metadata notes stay collapsed;
+real mismatches and incomplete readings remain visible.
+
+The offline preflight read the matching PDF, mismatching PDF and scanned sample
+and checked CSV/JSON export. The 15 supplied images were read again with native
+OCR: all expected item counts, net subtotals, printed tax and main totals still
+matched, and all 63 net item calculations reconciled. Product-description OCR
+can still contain character errors; this is not a guarantee for arbitrary files.

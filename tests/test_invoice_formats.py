@@ -39,7 +39,7 @@ def test_net_vat_gross_extraction_and_rounding_review():
     report = validate_invoice(invoice)
     assert report.error_count == 0 and report.difference == "0.00"
     assert "ROUNDING_REVIEW" in {i.code for i in report.issues}
-    assert result_summary(report)[1] == "Totals match · check tax rounding"
+    assert result_summary(report)[1] == "Main total matches · rounding note"
 
 
 @pytest.mark.parametrize("value,expected", [("1 234,56", "1234.56"), ("40 677,81", "40677.81"), ("1.234,56", "1234.56"), ("113,45", "113.45"), ("1,234.56", "1234.56"), ("1,23,456.78", "123456.78")])

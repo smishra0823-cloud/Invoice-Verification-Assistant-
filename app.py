@@ -19,7 +19,7 @@ from invoice_assistant.currency import CURRENCIES, currency_label, format_money,
 from invoice_assistant.validation import validate_invoice
 
 ROOT = Path(__file__).resolve().parent
-READER_VERSION = "currency-evidence-v3"
+READER_VERSION = "interview-demo-v4"
 load_dotenv(ROOT / ".env")
 st.set_page_config(page_title="InvoiceLens · Clear invoice checks", page_icon="📄", layout="wide")
 st.markdown(f"<style>{(ROOT / 'assets/style.css').read_text()}</style>", unsafe_allow_html=True)
@@ -58,9 +58,13 @@ def scan_invoice(name, data=None, text="", manual=False, cloud=False, api_key=""
                     invoice, usage = extract_with_ai(document, api_key, model)
                     meta.update(method="OpenAI vision", **usage)
                 else:
-                    text, mode = local_text(document)
-                    invoice = parse_invoice_text(text)
-                    meta["method"] = mode + " / rules"
+                    try:
+                        text, mode = local_text(document)
+                        invoice = parse_invoice_text(text)
+                        meta["method"] = mode + " / rules"
+                    except DocumentError as error:
+                        invoice = Invoice(line_items=[LineItem()], reading_warnings=[str(error)], notes=["Automatic reading was unavailable. The original is preserved for manual entry."])
+                        meta["method"] = "manual review / OCR unavailable"
             clear_result()
             st.session_state.update(invoice=invoice.model_dump(), source=meta, source_images=images, raw_text=text, approved=False, reader_version=READER_VERSION)
         st.rerun()
@@ -157,7 +161,8 @@ if top[1].button("Check another invoice", width="stretch"):
     start_over()
     st.rerun()
 tone, title, subtitle = result_summary(report)
-st.markdown(f'<div class="result-banner {tone}"><div class="result-symbol">{"!" if report.issues else "✓"}</div><div><strong>{title}</strong><p>{subtitle}</p></div></div>', unsafe_allow_html=True)
+symbol = "✓" if tone == "matched" else "i" if tone == "review" else "!"
+st.markdown(f'<div class="result-banner {tone}"><div class="result-symbol">{symbol}</div><div><strong>{title}</strong><p>{subtitle}</p></div></div>', unsafe_allow_html=True)
 metrics = st.columns(3)
 metrics[0].metric("Total on invoice", format_money(report.stated_total, invoice) or "Not read")
 metrics[1].metric("Recalculated total", format_money(report.calculated_total, invoice) or "Not checked yet")
@@ -178,9 +183,8 @@ if not invoice.currency:
 if report.issues:
     main_issues = [issue for issue in report.issues if issue.code != "ASSUMED_ZERO"]
     assumptions = [issue for issue in report.issues if issue.code == "ASSUMED_ZERO"]
-    with st.expander("Checks and details to confirm", expanded=True):
-        if report.difference == "0.00":
-            st.success("Net item amounts + printed tax + shipping − discount match the invoice total.")
+    needs_correction = bool(report.error_count) or any(issue.code == "EXTRACTION_REVIEW" for issue in report.issues)
+    with st.expander("Details needed to finish the check" if needs_correction else f"Review notes ({len(main_issues) + bool(assumptions)}) · not calculation failures", expanded=needs_correction):
         for issue in main_issues:
             message = f"**{field_label(issue.field)}** — {issue.message}"
             if issue.code == "MISSING_FIELD" and issue.field == "currency":
@@ -189,7 +193,7 @@ if report.issues:
                 message += f" Expected: **{issue.expected}**."
             if issue.actual:
                 message += f" Read: **{issue.actual}**."
-            (st.error if issue.code in MISMATCH_CODES else st.warning)(message)
+            (st.error if issue.code in MISMATCH_CODES else st.warning if issue.severity == "ERROR" or issue.code == "EXTRACTION_REVIEW" else st.info)(message)
         if assumptions:
             fields = ", ".join(field_label(issue.field).lower() for issue in assumptions)
             st.caption(f"Calculation assumption: {fields} not shown; treated as zero. Confirm against the original.")
@@ -233,7 +237,14 @@ with right, st.container(border=True, key="details_card"):
     displayed = frame[shown_fields].copy()
     for column in ("unit_price", "line_total"):
         displayed[column] = displayed[column].map(lambda value: format_money(value, invoice) if value else "Not read")
-    st.dataframe(displayed.rename(columns={"description": "Description", "quantity": "Qty", "unit_price": "Net price" if vat_present else "Unit price", "line_total": "Net amount" if vat_present else "Amount"}), hide_index=True, width="stretch")
+    # A wrapping table keeps numeric columns visible beside long descriptions,
+    # including on small laptop windows. The edit grid remains separate below.
+    rows_html = "".join("<tr>" + "".join(f"<td>{html.escape(str(row[name]))}</td>" for name in shown_fields) + "</tr>" for row in displayed.to_dict("records"))
+    price_label, amount_label = ("Net price", "Net amount") if vat_present else ("Unit price", "Amount")
+    if rows_html:
+        st.markdown(f'<table class="item-table"><thead><tr><th>Description</th><th>Qty</th><th>{price_label}</th><th>{amount_label}</th></tr></thead><tbody>{rows_html}</tbody></table>', unsafe_allow_html=True)
+    else:
+        st.info("No items read yet. Add the missing rows in the edit form below.")
     if vat_present:
         with st.expander("VAT and gross amounts"):
             st.caption("Net amounts exclude tax. Gross amounts include the printed item VAT.")
@@ -244,7 +255,7 @@ with right, st.container(border=True, key="details_card"):
     for label, value in (("Subtotal", invoice.subtotal), ("Tax", invoice.tax_total), ("Shipping", invoice.shipping), ("Discount", invoice.discount)):
         summary += f'<div class="total-row"><span>{label}</span><span>{html.escape(format_money(value, invoice) if value else "Not stated")}</span></div>'
     st.markdown(f'<div class="totals">{summary}<div class="total-row final-total"><strong>Invoice total <small>{html.escape(invoice.currency or "")}</small></strong><strong>{html.escape(format_money(invoice.total, invoice) or "Not found")}</strong></div></div>', unsafe_allow_html=True)
-    with st.expander("Something looks wrong? Edit the details", expanded=source["method"] == "manual"):
+    with st.expander("Something looks wrong? Edit the details", expanded=source["method"] == "manual" or report.calculated_total is None or report.stated_total is None or bool(invoice.reading_warnings)):
         st.caption("Edit and save to recheck. Dates: YYYY-MM-DD. Amounts: 150.00.")
         revision = st.session_state.get("revision", 0)
         with st.form(f"invoice_review_{revision}"):
@@ -266,6 +277,8 @@ with right, st.container(border=True, key="details_card"):
             records = [row for row in records if any(value.strip() for value in row.values())]
             updated = Invoice(vendor_name=vendor.strip() or None, invoice_number=invoice_number.strip() or None, invoice_date=invoice_date.strip() or None, due_date=due_date.strip() or None, currency=currency.strip().upper() or None, line_items=[LineItem(**{k: (v.strip() or None) if k != "description" else v.strip() for k, v in row.items()}) for row in records], notes=invoice.notes, **{name: value.strip() or None for name, value in totals.items()})
             set_currency(updated, currency.strip(), manual=True)
+            if invoice.reading_warnings:
+                updated.notes.append("Item fields were manually saved after an extraction warning. Confirm all rows against the source.")
             st.session_state.update(invoice=updated.model_dump(), approved=False, review_ack=False)
             st.rerun()
 

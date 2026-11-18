@@ -5,7 +5,7 @@ decimal strings. Never choose a number because it makes the totals balance.
 """
 
 import re
-from datetime import date
+from datetime import date, datetime
 
 from .models import Invoice, LineItem
 from .currency import set_currency, strip_currency
@@ -52,7 +52,30 @@ def normalized_date(value):
                 return date(year, month, day).isoformat()
             except ValueError:
                 pass
+    for pattern in ("%d %B %Y", "%d %b %Y", "%B %d, %Y", "%b %d, %Y", "%Y/%m/%d"):
+        try:
+            return datetime.strptime(value, pattern).date().isoformat()
+        except ValueError:
+            pass
     return value
+
+
+def table_columns(line):
+    """Recognize explicit column names instead of assuming one fixed order."""
+    cells = re.split(r"\s*\|\s*|\t+|\s{2,}", line.strip())
+    aliases = {
+        "description": {"description", "item", "items", "product", "particulars", "service", "item description"},
+        "quantity": {"qty", "quantity", "qty."},
+        "unit_price": {"price", "unit price", "rate", "net price", "unit cost"},
+        "line_total": {"amount", "total", "line total", "net amount", "net worth", "line amount"},
+    }
+    mapped = {}
+    for index, cell in enumerate(cells):
+        label = re.sub(r"\s*\([^)]*\)", "", cell.lower()).strip()
+        for field, names in aliases.items():
+            if label in names:
+                mapped[field] = index
+    return mapped if {"description", "quantity", "unit_price"} <= mapped.keys() else None
 
 
 def parse_invoice_text(text: str) -> Invoice:
@@ -73,7 +96,7 @@ def parse_invoice_text(text: str) -> Invoice:
                     return re.split(r"\s{2,}", lines[index + 1])[0].strip()
         return None
 
-    invoice.vendor_name = labeled(r"(?:vendor|supplier|seller)(?: name)?\b", next_line=True)
+    invoice.vendor_name = labeled(r"(?:(?:vendor|supplier|seller)(?: name)?|bill from)\b", next_line=True)
     if not invoice.vendor_name:
         candidates = [line for line in lines[:3] if not re.search(r"\binvoice\b|^date\b", line, re.I)]
         invoice.vendor_name = candidates[0] if candidates else None
@@ -115,8 +138,29 @@ def parse_invoice_text(text: str) -> Invoice:
     else:
         reserved = r"^(?:sub[ -]?total|tax|gst|cgst|sgst|igst|discount|shipping|delivery|freight|grand total|invoice|amount due|total|date|due date|currency|vendor|supplier|seller|summary)\b"
         pattern = re.compile(r"^(.+?)\s+(" + AMOUNT + r")\s+(" + AMOUNT + r")\s+(" + AMOUNT + r")$")
+        columns = None
         for line in lines[:summary_at]:
+            header = table_columns(line)
+            if header:
+                columns = header
+                continue
             if re.search(reserved, line, re.I):
+                columns = None
+                continue
+            if columns:
+                cells = re.split(r"\s*\|\s*|\t+|\s{2,}", line.strip())
+                if len(cells) > max(columns.values()):
+                    try:
+                        fields = {field: cells[index] if field == "description" else normalized_number(cells[index], comma_decimal) for field, index in columns.items()}
+                        invoice.line_items.append(LineItem(**fields))
+                    except ValueError:
+                        invoice.reading_warnings.append("An item row could not be read completely. Check all quantities, prices and amounts in the edit form.")
+                    continue
+                if len(cells) == 1 and invoice.line_items and not re.fullmatch(r"[-_= ]+", line):
+                    invoice.line_items[-1].description += " " + line
+                    continue
+                if not re.fullmatch(r"[-_=| ]+", line):
+                    invoice.reading_warnings.append("An item row had missing columns. Check the original before relying on the calculated total.")
                 continue
             cells = [cell.strip() for cell in line.split("|")]
             match = pattern.match(line) if len(cells) != 4 else None
@@ -130,11 +174,11 @@ def parse_invoice_text(text: str) -> Invoice:
                     pass
 
     labels = {
-        "subtotal": r"sub[ -]?total",
+        "subtotal": r"(?:sub[ -]?total|net total)",
         "tax_total": r"(?:tax(?: total)?|total tax|gst(?: total)?|vat(?: total)?)(?!\s*(?:id|no\b|number|identification))",
         "discount": r"(?:discount|total discount)",
         "shipping": r"(?:shipping|delivery|freight)(?: charge[s]?)?",
-        "total": r"(?:grand total|invoice total|amount due|total amount|total)(?!\s*(?:tax|discount|items|qty|quantity)\b)",
+        "total": r"(?:grand total|gross total|invoice total|bill total|balance due|total due|amount payable|amount due|total amount|total)(?!\s*(?:tax|discount|items|qty|quantity)\b)",
     }
     for field, pattern in labels.items():
         if getattr(invoice, field) is not None:

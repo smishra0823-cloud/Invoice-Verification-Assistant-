@@ -9,14 +9,16 @@ def result_summary(report):
         return "attention", "Please confirm the currency first", "Different currencies were detected. Amounts have not been added or compared across currencies. Review the currency evidence below."
     if report.calculated_total is None or report.stated_total is None:
         return "attention", "We couldn’t read enough to check this invoice", "This is a reading problem, not a confirmed invoice error. Compare the extracted details with the original and fill in the missing amounts below."
+    if any(issue.code == "EXTRACTION_REVIEW" for issue in report.issues):
+        return "attention", "Please check the item details we read", "Some item columns could not be read reliably. The calculations use the extracted rows below; correct those rows before deciding whether the invoice has an error."
     if any(issue.code in MISMATCH_CODES for issue in report.issues):
         return "correction", "The amounts don’t match", "The saved amounts disagree with one or more calculations. Check the highlighted values against the original before deciding whether the invoice is wrong."
     if report.error_count:
         return "attention", "Please check the extracted numbers", "Some values could not be used in the check. Correct them against the original, then save to recalculate."
     if any(issue.code == "ROUNDING_REVIEW" for issue in report.issues):
-        return "attention", "Totals match · check tax rounding", "The net subtotal plus the printed tax matches the invoice total. Small differences in the item-level gross amounts still need a rounding review."
+        return "review", "Main total matches · rounding note", "The net subtotal plus printed tax matches the invoice total. Small item-level rounding differences are listed in the review notes; this is not a failed total check."
     if report.warning_count:
-        return "attention", "Totals match · a few details to confirm", "The saved item amounts and invoice total agree. Review the missing details and calculation assumptions below."
+        return "matched", "The amounts add up", "The amounts read from this invoice reconcile. A few details or assumptions are listed in Review notes; they are not calculation failures."
     return "matched", "The amounts add up", "The arithmetic checks passed. Please confirm that the extracted details match your original."
 
 

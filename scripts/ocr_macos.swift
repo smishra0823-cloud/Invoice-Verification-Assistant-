@@ -11,7 +11,7 @@ struct ReadLine {
 func recognize(_ image: CGImage, offset: Double = 0, scale: Double = 1) throws -> [ReadLine] {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
-    request.usesLanguageCorrection = false
+    request.usesLanguageCorrection = true
     request.recognitionLanguages = ["en-US"]
     try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
     return (request.results ?? []).compactMap { observation in

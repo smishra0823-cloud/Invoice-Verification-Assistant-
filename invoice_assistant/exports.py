@@ -18,7 +18,7 @@ def spreadsheet_safe(value):
 
 def export_record(invoice: Invoice, report: ValidationReport, source: dict, reviewer: str = "", approved=False):
     return {
-        "schema_version": "1.2",
+        "schema_version": "1.3",
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "source": source,
         "invoice": invoice.model_dump(),
@@ -37,7 +37,7 @@ def json_bytes(record):
 
 def csv_bytes(record):
     stream = io.StringIO(newline="")
-    fields = ["vendor_name", "invoice_number", "invoice_date", "currency", "currency_symbol", "currency_status", "description", "quantity", "unit_price", "line_total", "tax_rate", "gross_total", "invoice_total", "calculated_total", "difference", "validation_status", "review_status", "reviewer"]
+    fields = ["vendor_name", "invoice_number", "invoice_date", "currency", "currency_symbol", "currency_status", "description", "quantity", "unit_price", "line_total", "tax_rate", "gross_total", "invoice_total", "calculated_total", "difference", "arithmetic_status", "validation_status", "review_status", "reviewer"]
     writer = csv.DictWriter(stream, fieldnames=fields)
     writer.writeheader()
     invoice = record["invoice"]
@@ -49,6 +49,7 @@ def csv_bytes(record):
             "calculated_total": record["validation"]["calculated_total"],
             "difference": record["validation"]["difference"],
             "validation_status": record["validation"]["status"],
+            "arithmetic_status": record["validation"]["arithmetic_status"],
             "review_status": record["review"]["status"],
             "reviewer": record["review"]["reviewer"],
         }

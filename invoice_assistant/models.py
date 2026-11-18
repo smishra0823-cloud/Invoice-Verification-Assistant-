@@ -33,3 +33,4 @@ class Invoice(BaseModel):
     shipping: str | None = None
     total: str | None = None
     notes: list[str] = Field(default_factory=list)
+    reading_warnings: list[str] = Field(default_factory=list)

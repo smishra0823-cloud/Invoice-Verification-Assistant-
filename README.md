@@ -8,6 +8,10 @@ in `main.py`; the complete application starts from `app.py`.
 
 ## Run on a Mac
 
+For a straightforward offline presentation, follow the
+[three-step interview demo](docs/INTERVIEW_DEMO.md). In VS Code, **Check interview
+demo** checks the real sample files and OCR before **Run InvoiceLens** starts the app.
+
 ```bash
 cd ~/Documents/AI-ML-Projects/invoice-assistant
 source .venv/bin/activate
@@ -65,6 +69,9 @@ checker computes its own total from the line items.
   four-column tables: `Description | Qty | Unit Price | Amount` or equivalent
   whitespace-separated rows. It handles CGST/SGST totals and Indian number
   grouping. Arbitrary layouts may require manual correction or AI vision.
+- Explicit pipe, tab and spaced table headers can identify reordered quantity,
+  unit-price and amount columns. Unreadable rows are flagged, not silently
+  reported as a clean check. Common month-name dates are normalized.
 - Net/VAT/gross tables are also supported: comma decimals and spaced thousands
   are normalized, the seller is separated from the client, wrapped descriptions
   stay with their item, and summary rows are excluded from the item list.
@@ -149,6 +156,11 @@ Larger differences remain errors. Original printed values are retained.
 Unreadable/missing amounts produce **Reading incomplete**, not a claim that the
 invoice is incorrect. The UI distinguishes extraction problems, confirmed
 arithmetic mismatches, and matching totals with details left to confirm.
+Non-critical metadata and assumptions appear in collapsed review notes; real
+errors and unreadable rows remain prominent. If OCR is unavailable, the original
+image stays visible with the manual edit form open. JSON and CSV contain a
+separate `arithmetic_status` so “review required” is not confused with a failed
+amount calculation. No errors are hidden or forced to pass.
 
 Arithmetic passing does **not** establish that the goods, vendor, tax treatment
 or invoice are genuine. Extraction can be wrong even when JSON is well formed.

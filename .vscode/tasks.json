@@ -5,7 +5,15 @@
       "label": "Run InvoiceLens",
       "type": "shell",
       "command": "${command:python.interpreterPath}",
-      "args": ["-m", "streamlit", "run", "app.py", "--server.address", "127.0.0.1"],
+      "args": ["-m", "streamlit", "run", "app.py", "--server.address", "127.0.0.1", "--server.port", "8502"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "problemMatcher": []
+    },
+    {
+      "label": "Check interview demo",
+      "type": "shell",
+      "command": "${command:python.interpreterPath}",
+      "args": ["scripts/check_demo.py", "--ocr"],
       "options": {"cwd": "${workspaceFolder}"},
       "problemMatcher": []
     },

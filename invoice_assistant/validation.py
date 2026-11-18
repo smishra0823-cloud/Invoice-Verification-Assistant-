@@ -65,6 +65,18 @@ class ValidationReport:
         return sum(issue.severity == "WARNING" for issue in self.issues)
 
     @property
+    def arithmetic_status(self):
+        if any(issue.code == "MIXED_CURRENCIES" for issue in self.issues):
+            return "not_checked"
+        if self.calculated_total is None or self.stated_total is None:
+            return "incomplete"
+        if any(issue.code == "EXTRACTION_REVIEW" for issue in self.issues):
+            return "needs_details"
+        if self.error_count:
+            return "mismatch" if any(issue.code.endswith("MISMATCH") for issue in self.issues) else "needs_details"
+        return "matched_with_rounding_note" if any(issue.code == "ROUNDING_REVIEW" for issue in self.issues) else "matched"
+
+    @property
     def status(self):
         if any(issue.code == "MIXED_CURRENCIES" for issue in self.issues):
             return "Currency review required"
@@ -73,7 +85,7 @@ class ValidationReport:
         return "Needs correction" if self.error_count else "Review required" if self.warning_count else "Checks passed"
 
     def to_dict(self):
-        return {**asdict(self), "status": self.status, "errors": self.error_count, "warnings": self.warning_count}
+        return {**asdict(self), "status": self.status, "arithmetic_status": self.arithmetic_status, "review_required": bool(self.issues), "errors": self.error_count, "warnings": self.warning_count}
 
 
 def validate_invoice(invoice: Invoice) -> ValidationReport:
@@ -107,6 +119,8 @@ def validate_invoice(invoice: Invoice) -> ValidationReport:
     if invoice.currency_status == "mixed":
         issue("ERROR", "MIXED_CURRENCIES", "currency", "Conflicting currency evidence was read. Confirm one currency or separate the invoices before comparing amounts. No currency conversion has been performed.")
         return report
+    for warning in dict.fromkeys(invoice.reading_warnings):
+        issue("WARNING", "EXTRACTION_REVIEW", "line_items", warning)
     for name in ("vendor_name", "invoice_number", "invoice_date"):
         if not str(getattr(invoice, name) or "").strip():
             issue("WARNING", "MISSING_FIELD", name, f"{name.replace('_', ' ').title()} is missing.")
